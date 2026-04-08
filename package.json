@@ -1,0 +1,14 @@
+{
+  "name": "agent-websocket-loop",
+  "version": "1.0.0",
+  "description": "Minimal OpenClaw-style agent loop over WebSocket — educational demo",
+  "main": "agent-server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node agent-server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
+    "ws": "^8.18.0"
+  }
+}
