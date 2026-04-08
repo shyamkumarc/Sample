@@ -41,19 +41,21 @@
 
 import { WebSocketServer } from "ws";
 import Anthropic from "@anthropic-ai/sdk";
+import * as emailSkill from "./skills/email.js";
 
 const PORT = 8080;
 const MODEL = "claude-opus-4-6";
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 //
-// Tools are declared as JSON schemas.  Claude reads the name + description to
-// decide when to call them, and the input_schema to know what arguments to pass.
-//
-// These are intentionally simple (no external deps) so the focus stays on the
-// agent loop pattern rather than the tools themselves.
+// Base tools + any skills.  Skills are just spread in here — the agent loop
+// itself never changes, only the tool list grows.
 
 const TOOLS = [
+  // ── Email skill (requires EMAIL_USER + EMAIL_PASSWORD env vars) ────────
+  ...emailSkill.TOOLS,
+
+  // ── Built-in tools (no env vars needed) ────────────────────────────────
   {
     name: "get_current_time",
     description:
@@ -104,7 +106,14 @@ const TOOLS = [
 // real logic here.  The result is a string that gets fed back to Claude so it
 // can incorporate the answer into its final reply.
 
-function executeTool(name, input) {
+// executeTool routes to the right handler.
+// Async because email tools involve real I/O (network calls to IMAP/SMTP).
+async function executeTool(name, input) {
+  // Delegate to the email skill if this is an email tool
+  if (emailSkill.TOOL_NAMES.has(name)) {
+    return emailSkill.execute(name, input);
+  }
+
   switch (name) {
     case "get_current_time":
       return new Date().toISOString();
@@ -193,16 +202,16 @@ async function runAgentLoop(client, conversationHistory, userMessage, send) {
         content: response.content,
       });
 
-      // Execute every tool and collect the results
-      const toolResults = toolUseBlocks.map((block) => {
-        const result = executeTool(block.name, block.input);
+      // Execute every tool and collect the results (await — may hit network)
+      const toolResults = await Promise.all(toolUseBlocks.map(async (block) => {
+        const result = await executeTool(block.name, block.input);
         send({ type: "tool_result", tool: block.name, result });
         return {
           type: "tool_result",
           tool_use_id: block.id, // must match the tool_use block's id
-          content: result,
+          content: String(result),
         };
-      });
+      }));
 
       // Feed the results back to Claude as a user turn, then loop again
       conversationHistory.push({ role: "user", content: toolResults });
